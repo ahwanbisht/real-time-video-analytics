@@ -14,7 +14,7 @@ frame_count = 0
 
 prev_time = 0
 
-analytics = Analytics(line_position=250, overcrowd_threshold=1)
+analytics = Analytics(line_position=250, overcrowd_threshold=3)
 
 while True:
     ret, frame = cap.read()
