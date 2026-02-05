@@ -1,4 +1,5 @@
 import time
+from state import live_metrics
 from database import Database
 from datetime import datetime
 
@@ -49,6 +50,11 @@ class Analytics:
                     del self.entry_times[track_id]
 
         self.track_positions[track_id] = center_y
+
+        live_metrics["count_in"] = self.count_in
+        live_metrics["count_out"] = self.count_out
+        live_metrics["current_inside"] = self.current_inside
+
 
     def check_overcrowding(self):
         if self.current_inside >= self.overcrowd_threshold:
