@@ -5,7 +5,11 @@ from datetime import datetime
 
 class Analytics:
     def __init__(self, line_position=250, overcrowd_threshold=5):
-        self.db = Database()
+        try:
+            self.db = Database()
+        except Exception as e:
+            print(f"Database connection error: {e}")
+            self.db = None
         self.line_position = line_position
         self.overcrowd_threshold = overcrowd_threshold
 
@@ -25,27 +29,42 @@ class Analytics:
 
             # Entry condition
             if prev_y < self.line_position and center_y > self.line_position:
-                self.db.insert_event(track_id, "ENTRY")
+                if self.db:
+                    self.db.insert_event(track_id, "ENTRY")
                 self.count_in += 1
                 self.current_inside += 1
                 self.entry_times[track_id] = now
+                live_metrics["alerts"].append({
+                    "type": "info",
+                    "message": f"Customer {track_id} entered"
+                })
+                if len(live_metrics["alerts"]) > 5:
+                    live_metrics["alerts"].pop(0)
                 print(f"[ENTRY] ID {track_id} entered.")
 
             # Exit condition
             elif prev_y > self.line_position and center_y < self.line_position:
-                self.db.insert_event(track_id, "EXIT")
+                if self.db:
+                    self.db.insert_event(track_id, "EXIT")
                 self.count_out += 1
                 self.current_inside -= 1
+                live_metrics["alerts"].append({
+                    "type": "info",
+                    "message": f"Customer {track_id} exited"
+                })
+                if len(live_metrics["alerts"]) > 5:
+                    live_metrics["alerts"].pop(0)
                 print(f"[EXIT] ID {track_id} exited.")
 
                 if track_id in self.entry_times:
                     dwell = now - self.entry_times[track_id]
-                    self.db.insert_customer(
-                        track_id,
-                        datetime.fromtimestamp(self.entry_times[track_id]),
-                        datetime.fromtimestamp(now),
-                        int(dwell)
-                    )
+                    if self.db:
+                        self.db.insert_customer(
+                            track_id,
+                            datetime.fromtimestamp(self.entry_times[track_id]),
+                            datetime.fromtimestamp(now),
+                            int(dwell)
+                        )
                     print(f"[DWELL] ID {track_id} stayed {int(dwell)} seconds.")
                     del self.entry_times[track_id]
 
@@ -58,4 +77,12 @@ class Analytics:
 
     def check_overcrowding(self):
         if self.current_inside >= self.overcrowd_threshold:
-            print("⚠ ALERT: Overcrowding detected!")
+            # Add alert to shared state
+            live_metrics["alerts"].append({
+                "type": "critical",
+                "message": "Overcrowding detected!"
+            })
+
+            # Keep only last 5 alerts
+            if len(live_metrics["alerts"]) > 5:
+                live_metrics["alerts"].pop(0)
