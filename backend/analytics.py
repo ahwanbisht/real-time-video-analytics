@@ -7,9 +7,11 @@ class Analytics:
     def __init__(self, line_position=250, overcrowd_threshold=5):
         try:
             self.db = Database()
+            live_metrics["system_status"]["database"] = "online"
         except Exception as e:
             print(f"Database connection error: {e}")
             self.db = None
+            live_metrics["system_status"]["database"] = "offline"
         self.line_position = line_position
         self.overcrowd_threshold = overcrowd_threshold
 
