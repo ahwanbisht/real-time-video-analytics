@@ -1,19 +1,19 @@
 from fastapi import FastAPI, WebSocket
-from database import Database
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-import asyncio
 import threading
 import cv2
+import asyncio
+import time
+
 from detector import Detector
 from tracker import Tracker
 from analytics import Analytics
 from config import FRAME_WIDTH, FRAME_HEIGHT, PROCESS_EVERY_N_FRAMES
-from camera import Camera
-import time
+from state import live_metrics
 
 app = FastAPI()
-camera = Camera(0)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,14 +22,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from state import live_metrics
+# 🔥 SINGLE CAMERA INSTANCE (stable on Windows)
+cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
+latest_frame = None
 active_connections = []
+
+
+# ------------------- REST -------------------
 
 @app.get("/stats")
 def get_stats():
     return live_metrics
 
+
+# ------------------- WEBSOCKET -------------------
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -44,24 +51,27 @@ async def websocket_endpoint(websocket: WebSocket):
         active_connections.remove(websocket)
 
 
-# Detection Loop as Background Thread
+# ------------------- DETECTION LOOP -------------------
+
 def detection_loop():
+    global latest_frame
+
     detector = Detector()
     tracker = Tracker()
     analytics = Analytics()
 
-    
     frame_count = 0
+    prev_time = 0
 
     while True:
-        frame = camera.get_frame()
-        if frame is None:
-            time.sleep(0.01)
+        ret, frame = cap.read()
+        if not ret:
             continue
 
         frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
         frame_count += 1
 
+        # 🔥 Skip frames for performance
         if frame_count % PROCESS_EVERY_N_FRAMES != 0:
             continue
 
@@ -74,21 +84,60 @@ def detection_loop():
 
             track_id = track.track_id
             l, t, r, b = track.to_ltrb()
-            center_y = int((t + b) / 2)
+            l, t, r, b = int(l), int(t), int(r), int(b)
 
+            center_y = int((t + b) / 2)
             analytics.update(track_id, center_y)
 
+            # Draw clean bounding box
+            cv2.rectangle(frame, (l, t), (r, b), (0, 255, 0), 2)
+            cv2.putText(
+                frame,
+                f"ID {track_id}",
+                (l, t - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 255, 0),
+                2
+            )
+
+        # Draw entry/exit line
+        cv2.line(frame, (0, 250), (FRAME_WIDTH, 250), (0, 0, 255), 2)
+
+        # 🔥 FPS Calculation
+        current_time = time.time()
+        fps = 1 / (current_time - prev_time) if prev_time != 0 else 0
+        prev_time = current_time
+
+        cv2.putText(
+            frame,
+            f"FPS: {int(fps)}",
+            (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (255, 0, 0),
+            2
+        )
+
+        latest_frame = frame
+
+
+@app.on_event("startup")
+def start_detection():
+    thread = threading.Thread(target=detection_loop, daemon=True)
+    thread.start()
+
+
+# ------------------- VIDEO STREAM -------------------
+
 def generate_frames():
-    cap = cv2.VideoCapture(0)
-
+    global latest_frame
     while True:
-        success, frame = cap.read()
-        if not success:
-            break
+        if latest_frame is None:
+            time.sleep(0.01)
+            continue
 
-        frame = cv2.resize(frame, (640, 480))
-
-        ret, buffer = cv2.imencode(".jpg", frame)
+        ret, buffer = cv2.imencode(".jpg", latest_frame)
         frame_bytes = buffer.tobytes()
 
         yield (
@@ -97,54 +146,9 @@ def generate_frames():
         )
 
 
-# Start detection automatically when API starts
-@app.on_event("startup")
-def start_detection():
-    thread = threading.Thread(target=detection_loop, daemon=True)
-    thread.start()
-
 @app.get("/video")
 def video_feed():
     return StreamingResponse(
         generate_frames(),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
-
-@app.get("/history")
-def get_history():
-    try:
-        db = Database()
-        cursor = db.cursor
-
-        cursor.execute("""
-            SELECT COUNT(*) FROM customers
-        """)
-        total_customers = cursor.fetchone()[0]
-
-        cursor.execute("""
-            SELECT AVG(dwell_time) FROM customers
-        """)
-        avg_dwell = cursor.fetchone()[0] or 0
-
-        cursor.execute("""
-            SELECT MAX(dwell_time) FROM customers
-        """)
-        max_dwell = cursor.fetchone()[0] or 0
-
-        return {
-            "total_customers": total_customers,
-            "avg_dwell": avg_dwell,
-            "max_dwell": max_dwell
-        }
-
-    except Exception as e:
-        print("History DB error:", e)
-        #fall back to dummy data
-        return {
-            "total_customers": 25,
-            "avg_dwell": 42,
-            "max_dwell": 120,
-            "dwell_history": [30, 45, 60, 50, 90, 40, 35, 70],
-            "customer_trend": [5, 8, 12, 10, 15, 18, 20, 25]
-        }
-
