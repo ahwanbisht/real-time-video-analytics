@@ -152,18 +152,109 @@ function App() {
         )}
 
         {page === "history" && historyData && (
-          <>
-            <h1>Analytics</h1>
+        <>
+          <h1>Analytics Dashboard</h1>
+
+          <div className="metrics-grid">
             <div className="metric-card">
               <h3>Total Customers</h3>
               <p>{historyData.total_customers}</p>
             </div>
+
             <div className="metric-card">
-              <h3>Average Dwell</h3>
+              <h3>Average Dwell (sec)</h3>
               <p>{historyData.avg_dwell}</p>
             </div>
-          </>
-        )}
+
+            <div className="metric-card">
+              <h3>Peak Traffic</h3>
+              <p>{historyData.peak_traffic}</p>
+            </div>
+          </div>
+
+          <div className="graph-row">
+
+          <div className="graph-card">
+            <h3>Entry Trend (Customers per Day)</h3>
+            <Line
+              data={{
+                labels: historyData.trend_dates,
+                datasets: [
+                  {
+                    label: "Entries",
+                    data: historyData.trend_counts,
+                    borderColor: "#3b82f6",
+                    fill: false,
+                  },
+                ],
+              }}
+              options={{
+                responsive: true,
+                plugins: {
+                  legend: { display: true },
+                },
+                scales: {
+                  x: {
+                    title: {
+                      display: true,
+                      text: "Date",
+                    },
+                  },
+                  y: {
+                    title: {
+                      display: true,
+                      text: "Number of Customers",
+                    },
+                    beginAtZero: true,
+                  },
+                },
+              }}
+            />
+          </div>
+
+          <div className="graph-card">
+            <h3>Dwell Time Distribution</h3>
+            <Line
+              data={{
+                labels: historyData.dwell_distribution.map((_, i) => i + 1),
+                datasets: [
+                  {
+                    label: "Dwell Time (seconds)",
+                    data: historyData.dwell_distribution,
+                    borderColor: "#16a34a",
+                    fill: false,
+                  },
+                ],
+              }}
+              options={{
+                responsive: true,
+                plugins: {
+                  legend: { display: true },
+                },
+                scales: {
+                  x: {
+                    title: {
+                      display: true,
+                      text: "Customer Session Index",
+                    },
+                  },
+                  y: {
+                    title: {
+                      display: true,
+                      text: "Dwell Time (seconds)",
+                    },
+                    beginAtZero: true,
+                  },
+                },
+              }}
+            />
+          </div>
+
+        </div>
+
+        </>
+      )}
+
       </div>
     </div>
   );
