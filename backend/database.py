@@ -1,19 +1,24 @@
 import psycopg2
-from datetime import datetime
 
 class Database:
     def __init__(self):
         self.conn = psycopg2.connect(
-            "postgresql://postgres:TanU,Tan$090@db.eabjerwsqxsnogvihhtw.supabase.co:5432/postgres"
+            host="db.eabjerwsqxsnogvihhtw.supabase.co",
+            database="postgres",
+            user="postgres",
+            password="TanU,Tan$090",
+            port=5432,
+            sslmode="require",
+            connect_timeout=5
         )
         self.cursor = self.conn.cursor()
 
     def insert_event(self, track_id, event_type):
         query = """
         INSERT INTO events (track_id, event_type, timestamp)
-        VALUES (%s, %s, %s)
+        VALUES (%s, %s, NOW())
         """
-        self.cursor.execute(query, (track_id, event_type, datetime.utcnow()))
+        self.cursor.execute(query, (track_id, event_type))
         self.conn.commit()
 
     def insert_customer(self, track_id, entry_time, exit_time, dwell_time):
