@@ -1,12 +1,15 @@
+from settings import Settings
 import time
 from datetime import datetime
 from database import Database
+from logger import setup_logger
 from state import live_metrics
 
+logger = setup_logger()
 class Analytics:
-    def __init__(self, line_position=250, overcrowd_threshold=1):
-        self.line_position = line_position
-        self.overcrowd_threshold = overcrowd_threshold
+    def __init__(self, line_position=250, overcrowd_threshold=3):
+        self.line_position = Settings.LINE_POSITION
+        self.overcrowd_threshold = Settings.OVERCROWD_THRESHOLD
 
         self.count_in = 0
         self.count_out = 0
@@ -30,9 +33,10 @@ class Analytics:
             prev_y = self.track_positions[track_id]
 
             # ENTRY
-            if prev_y < self.line_position and center_y > self.line_position:
+            if prev_y > self.line_position and center_y < self.line_position:
                 self.count_in += 1
                 self.current_inside += 1
+                logger.info(f"ENTRY detected | ID: {track_id}")
                 self.entry_times[track_id] = now
 
                 if self.db:
@@ -41,9 +45,10 @@ class Analytics:
                 self.add_alert("info", f"Customer {track_id} entered")
 
             # EXIT
-            elif prev_y > self.line_position and center_y < self.line_position:
+            elif prev_y < self.line_position and center_y > self.line_position:
                 self.count_out += 1
                 self.current_inside -= 1
+                logger.info(f"EXIT detected | ID: {track_id}")
 
                 if self.db:
                     self.db.insert_event(track_id, "EXIT")

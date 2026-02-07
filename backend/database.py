@@ -1,13 +1,10 @@
+from settings import Settings
 import psycopg2
 
 class Database:
     def __init__(self):
         self.conn = psycopg2.connect(
-            host="db.eabjerwsqxsnogvihhtw.supabase.co",
-            database="postgres",
-            user="postgres",
-            password="TanU,Tan$090",
-            port=5432,
+            Settings.DB_URL,
             sslmode="require",
             connect_timeout=5
         )

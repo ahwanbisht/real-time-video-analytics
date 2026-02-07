@@ -1,4 +1,5 @@
 from fastapi import FastAPI, WebSocket
+from logger import setup_logger
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import threading
@@ -9,7 +10,7 @@ import time
 from detector import Detector
 from tracker import Tracker
 from analytics import Analytics
-from config import FRAME_WIDTH, FRAME_HEIGHT, PROCESS_EVERY_N_FRAMES
+from settings import Settings
 from state import live_metrics
 
 app = FastAPI()
@@ -22,8 +23,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🔥 SINGLE CAMERA INSTANCE (stable on Windows)
-cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+logger = setup_logger()
+
+#SINGLE CAMERA INSTANCE (stable on Windows)
+cap = cv2.VideoCapture(Settings.CAMERA_INDEX, cv2.CAP_DSHOW)
 
 latest_frame = None
 active_connections = []
@@ -55,7 +58,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 def detection_loop():
     global latest_frame
-
+    logger.info("Detection loop started")
     detector = Detector()
     tracker = Tracker()
     analytics = Analytics()
@@ -66,13 +69,14 @@ def detection_loop():
     while True:
         ret, frame = cap.read()
         if not ret:
+            logger.warning("Camera frame read failed")
             continue
 
-        frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
+        frame = cv2.resize(frame, (Settings.FRAME_WIDTH, Settings.FRAME_HEIGHT))
         frame_count += 1
 
-        # 🔥 Skip frames for performance
-        if frame_count % PROCESS_EVERY_N_FRAMES != 0:
+        # Skip frames for performance
+        if frame_count % Settings.PROCESS_EVERY_N_FRAMES != 0:
             continue
 
         detections = detector.detect(frame)
@@ -102,9 +106,9 @@ def detection_loop():
             )
 
         # Draw entry/exit line
-        cv2.line(frame, (0, 250), (FRAME_WIDTH, 250), (0, 0, 255), 2)
+        cv2.line(frame, (0, Settings.LINE_POSITION), (Settings.FRAME_WIDTH, Settings.LINE_POSITION), (0, 0, 255), 2)
 
-        # 🔥 FPS Calculation
+        # FPS Calculation
         current_time = time.time()
         fps = 1 / (current_time - prev_time) if prev_time != 0 else 0
         prev_time = current_time
@@ -152,3 +156,63 @@ def video_feed():
         generate_frames(),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
+
+@app.get("/history")
+def get_history():
+    try:
+        from database import Database
+        db = Database()
+        cursor = db.cursor
+
+        # Total sessions
+        cursor.execute("SELECT COUNT(*) FROM customers")
+        total_customers = cursor.fetchone()[0]
+
+        # Average dwell
+        cursor.execute("SELECT AVG(dwell_time) FROM customers")
+        avg_dwell = cursor.fetchone()[0] or 0
+
+        # Maximum dwell
+        cursor.execute("SELECT MAX(dwell_time) FROM customers")
+        max_dwell = cursor.fetchone()[0] or 0
+
+        # Dwell time distribution
+        cursor.execute("SELECT dwell_time FROM customers")
+        dwell_distribution = [row[0] for row in cursor.fetchall()]
+
+        # Entry per day trend
+        cursor.execute("""
+            SELECT DATE(timestamp), COUNT(*)
+            FROM events
+            WHERE event_type='ENTRY'
+            GROUP BY DATE(timestamp)
+            ORDER BY DATE(timestamp)
+        """)
+        trend_data = cursor.fetchall()
+
+        dates = [str(row[0]) for row in trend_data]
+        counts = [row[1] for row in trend_data]
+
+        peak_traffic = max(counts) if counts else 0
+
+        return {
+            "total_customers": total_customers,
+            "avg_dwell": round(avg_dwell, 2),
+            "max_dwell": max_dwell,
+            "dwell_distribution": dwell_distribution,
+            "trend_dates": dates,
+            "trend_counts": counts,
+            "peak_traffic": peak_traffic
+        }
+
+    except Exception as e:
+        logger.error(f"History API error: {e}")
+        return {
+            "total_customers": 0,
+            "avg_dwell": 0,
+            "max_dwell": 0,
+            "dwell_distribution": [],
+            "trend_dates": [],
+            "trend_counts": [],
+            "peak_traffic": 0
+        }

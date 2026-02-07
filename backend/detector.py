@@ -1,5 +1,5 @@
 from ultralytics import YOLO
-from config import CONFIDENCE_THRESHOLD
+from settings import Settings
 
 class Detector:
     def __init__(self):
@@ -17,7 +17,7 @@ class Detector:
                 #yolo is pretrained on COCO dataset, class id 0 is for person
                 if cls == 0:
                     conf = float(box.conf[0])
-                    if conf > CONFIDENCE_THRESHOLD:
+                    if conf > Settings.CONFIDENCE_THRESHOLD:
                         x1, y1, x2, y2 = box.xyxy[0]
                         w = x2 - x1
                         h = y2 - y1
